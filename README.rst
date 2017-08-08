@@ -3,7 +3,7 @@ Contextual timer
 
 The library ctx_timer usefull to duration measure of python code execution.
 
-You can touch this project at github repository <>.
+You can touch this project at github repository <https://github.com/sergyp/ctx_timer>.
 
 Features:
 
@@ -12,18 +12,21 @@ Features:
 - simple usage of timer as separately object with .start() and .stop() methods
 - multi laps support
 - support of logging or echo to:
-  - standard python logging library
-  - stdout, stderr, file or other way, that supported stream-like interface
-  - nothing - fully silent mode (by default)
+
+    - standard python logging library
+    - stdout, stderr, file or other way, that supported stream-like interface
+    - nothing - fully silent mode (by default)
+
 - customizable templates of echo messages
 - human readable ergonomic string representation
 - timer name support
 - simple statistic:
-  - summary duration
-  - total average lap duration
-  - total max/min lap duration
-  - summary duration of last N laps
-  - average duration of last N laps
+
+    - summary duration
+    - total average lap duration
+    - total max/min lap duration
+    - summary duration of last N laps
+    - average duration of last N laps
 
 
 TODO: Basic usage examples
