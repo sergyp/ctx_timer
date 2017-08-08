@@ -5,7 +5,7 @@ import sys
 import logging
 log = logging.getLogger(__name__)
 
-__ALL__ = ['Timer', 'T', 'SimpleTimer',]
+__all__ = ['Timer', 'T', 'SimpleTimer',]
 
 if __name__ == '__main__':
     log = logging.getLogger()
