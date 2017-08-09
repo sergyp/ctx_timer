@@ -32,7 +32,7 @@ class SimpleTimer(object):
         self.owner = owner
         self.time_fmt = time_fmt
         self.extra = extra or {}
-        if template:
+        if template is not None:
             self.template = template
 
     @property
@@ -113,9 +113,13 @@ class Timer(SimpleTimer):
             log_level=logging.DEBUG,
             log_name=None,
             laps_store=0,
+            stat_template=None,
             **kw
         ):
         super(Timer, self).__init__(name=name, **kw)
+        if stat_template is not None:
+            self.stat_template = stat_template
+
         self.laps_store = laps_store
         self.log_level = log_level and logging._checkLevel(log_level) or logging.NOTSET
         _stream = None
@@ -255,14 +259,15 @@ class Timer(SimpleTimer):
 
         return closure
 
+    stat_template = (
+        u' - {timer.lap_count:4} '
+        u'[{timer.duration_min:{timer.time_fmt}}'
+        u'/{timer.duration_avg:{timer.time_fmt}}'
+        u'/{timer.duration_max:{timer.time_fmt}}]'
+    )
     @property
     def stat_string(self):
-        return (
-            u' - {timer.lap_count:4}'
-            u' [{timer.duration_min:{timer.time_fmt}}'
-            u'/{timer.duration_avg:{timer.time_fmt}}'
-            u'/{timer.duration_max:{timer.time_fmt}}]'
-        ).format(timer=self) if self.lap_count else ''
+        return self.stat_template.format(timer=self) if self.lap_count else ''
 
     template = u"{timer.name}: {timer.duration:{timer.time_fmt}}{timer.stat_string}{timer.running_sign}"
 
