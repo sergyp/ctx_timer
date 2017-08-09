@@ -17,12 +17,13 @@ import os
 import time
 from datetime import datetime
 from functools import wraps
-import collections
+from collections import Callable
+from contextlib import nested
 from copy import copy
 
 
 DEFAULT_TIME_FMT = '.3f'
-
+nested()
 
 class SimpleTimer(object):
     def __init__(self, name=None, owner=None, time_fmt=DEFAULT_TIME_FMT, template=None, extra=None):
@@ -127,7 +128,7 @@ class Timer(SimpleTimer):
             self.logger = logger
         elif isinstance(logger, basestring) and logger in {'stderr', 'stdout'}:
             _stream = getattr(sys, logger)
-        elif isinstance(getattr(logger, 'write', None), collections.Callable):
+        elif isinstance(getattr(logger, 'write', None), Callable):
             _stream = logger
         else:
             raise ValueError(
@@ -148,8 +149,6 @@ class Timer(SimpleTimer):
         self.lap_count = 0
         self.lap_timer = None
         self.laps = []
-
-        self._it_is_decorator = False
         self.__dict__.update(kw)
 
     def _log(self, message, *av, **kw):
@@ -159,7 +158,6 @@ class Timer(SimpleTimer):
 
     def start(self, t=None, lap_name=None):
         # todo: lock to thread save support
-        assert not self._it_is_decorator, "You can't start Timer instance used as decorator."
         assert self.lap_timer is None, "You can't start timer twice successively without stopping"
         lap_timer = self.lap_timer = SimpleTimer(name=lap_name or '{timer.name}:lap#{timer.lap_count}'.format(timer=self))
         t = super(Timer, self).start(t)
@@ -239,24 +237,32 @@ class Timer(SimpleTimer):
     def __exit__(self, ex_type, ex_value, traceback):
         self.stop()
 
-    def __call__(self, func, name=None):
-        self._it_is_decorator = True
-        @wraps(func)
-        def closure(*av, **kw):
-            timer = copy(self)
-            if name is not None:
-                timer.name = name
-            timer._it_is_decorator = False
-            if timer.name is None:  # TODO: ##OPTIMIZE extract from closure
-                # todo: call number store
-                timer.name = 'FUNC {func.func_name} [{fn}:{func.func_code.co_firstlineno}]'.format(
+    def __call__(self, func):
+        assert isinstance(func, Callable), "{} is not Callable, can't wrap".format(func)
+        timers = getattr(func, 'timers', None)
+        if timers is None:
+            @wraps(func)
+            def closure(*av, **kw):
+                lap_extra = dict(
                     func=func,
                     fn=os.path.basename(func.func_code.co_filename),
+                    line=func.func_code.co_firstlineno,
+                    # todo: ADD traceback of call point (optionally)
                 )
+                laps = ()
+                try:
+                    with nested(*closure.timers) as laps:
+                        return func(*av, **kw)
+                finally:
+                    for lap in laps:
+                        lap.extra.update(lap_extra)
 
-            with timer:
-                return func(*av, **kw)
+            closure.orig = func
+            timers = closure.timers = []
+        else:
+            closure = func
 
+        timers.append(self)
         return closure
 
     stat_template = (
@@ -300,13 +306,20 @@ if __name__ == '__main__':
     import random
 
     tm = Timer()
-    for i in xrange(30):
+    for i in xrange(10):
         with tm as t:
             sleep(random.randint(1, 3)/10)
 
         with random.choice([tm, Timer()]):
             print(u'lap {tm.lap_count:03d}::      {tm} '.format(tm=tm, t=t))
         sleep(0.2)
+
+    @tm
+    @T(name='t1')
+    @T(name='t2')
+    def f(x):
+        print('f(', x)
+
     # # simple usage:
     # with Timer('simple', logger='stderr'):
     #     pass
