@@ -238,6 +238,17 @@ class Timer(SimpleTimer):
 
         return closure
 
+    def __repr__(self):
+        return "<{name}:{self.duration:.3f}{stat}{runing_sign}>".format(
+            name=self.name or self.__class__.__name__,
+            self=self,
+            runing_sign=self.RUN_SIGN if self.is_active else self.STOP_SIGN,
+            stat=(
+                '/{self.lap_count}[{self.duration_min:.3f}~{self.duration_avg:.3f}~{self.duration_max:.3f}]'.format(self=self)
+                if self.lap_count else ''
+            ),
+        )
+
 
 class T(Timer):
     def __init__(
@@ -264,7 +275,7 @@ if __name__ == '__main__':
     for i in xrange(30):
         with tm as t:
             sleep(random.randint(1, 3)/10)
-        print('lap', tm.lap_count, tm, t)
+        print('lap', str(tm.lap_count).zfill(3), tm, t)
         sleep(0.2)
     # # simple usage:
     # with Timer('simple', logger='stderr'):
