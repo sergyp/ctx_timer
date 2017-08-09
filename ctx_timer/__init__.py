@@ -25,16 +25,15 @@ DEFAULT_TIME_FMT = '.3f'
 
 
 class SimpleTimer(object):
-    STOP_SIGN = '!'
-    RUN_SIGN = '...'
-
-    def __init__(self, name=None, owner=None, time_fmt=DEFAULT_TIME_FMT, extra=None):
-        self.name = name
+    def __init__(self, name=None, owner=None, time_fmt=DEFAULT_TIME_FMT, template=None, extra=None):
+        self.name = self.__class__.__name__ if name is None else name
         self.timestamp_start = None
         self.timestamp_stop = None
         self.owner = owner
         self.time_fmt = time_fmt
         self.extra = extra or {}
+        if template:
+            self.template = template
 
     @property
     def time_start(self):
@@ -80,12 +79,14 @@ class SimpleTimer(object):
         at_time = self.timestamp_stop or time.time()
         return at_time - self.timestamp_start
 
+    @property
+    def running_sign(self):
+        return '' if self.is_active else '.'
+
+    template = u"<{timer.name}:{timer.duration:{timer.time_fmt}}{timer.running_sign}>"
+
     def to_string(self, encoding=None):
-        s = u"<{name}:{self.duration:{self.time_fmt}}{runing_sign}>".format(
-            name=self.name or self.__class__.__name__,
-            self=self,
-            runing_sign=self.RUN_SIGN if self.is_active else self.STOP_SIGN,
-        )
+        s = self.template.format(timer=self)
         if encoding:
             return s.encode(encoding)
 
@@ -103,8 +104,6 @@ class SimpleTimer(object):
 
 # todo: Progress tracking feature (estimate, stage, progress bar, stage comment)
 class Timer(SimpleTimer):
-    STOP_SIGN = '.'
-    RUN_SIGN = ''
     def __init__(
             self,
             name=None,
@@ -158,12 +157,7 @@ class Timer(SimpleTimer):
         # todo: lock to thread save support
         assert not self._it_is_decorator, "You can't start Timer instance used as decorator."
         assert self.lap_timer is None, "You can't start timer twice successively without stopping"
-        lap_timer = self.lap_timer = SimpleTimer(
-            name=lap_name or '{name}:lap#{self.lap_count}'.format(
-                self=self,
-                name=self.name or self.__class__.__name__,
-            )
-        )
+        lap_timer = self.lap_timer = SimpleTimer(name=lap_name or '{timer.name}:lap#{timer.lap_count}'.format(timer=self))
         t = super(Timer, self).start(t)
         lap_timer.start(t)
 
@@ -171,37 +165,41 @@ class Timer(SimpleTimer):
             self._log(self.log_start.format(timer=self))
         return t
 
-    def stop(self, t=None):
-        # todo: lock to thread save support
-        lap_timer = self.lap_timer
-        assert lap_timer is not None, "Timer is not running, you can't stop them"
-        #t = super(Timer, self).stop(t)  # info: Будучи запущеным такой таймер уже не останавливается сам, только круги
-        r = lap_timer.stop(t, owner_stop=False)
-        self.lap_timer = None
-        self.lap_count += 1
-        last_lap_duration = lap_timer.duration
-        self.duration_sum += last_lap_duration
-        self.duration_sum_last += last_lap_duration
-        duration_min = self.duration_min
-        duration_max = self.duration_max
+    def stop(self, t=None, owner_stop=True):
+        owner = self.owner
+        if owner_stop and owner is not None:
+            return owner.stop(t)
+        else:
+            # todo: lock to thread save support
+            lap_timer = self.lap_timer
+            assert lap_timer is not None, "Timer is not running, you can't stop them"
+            #t = super(Timer, self).stop(t)  # info: Будучи запущеным такой таймер уже не останавливается сам, только круги
+            r = lap_timer.stop(t, owner_stop=False)
+            self.lap_timer = None
+            self.lap_count += 1
+            last_lap_duration = lap_timer.duration
+            self.duration_sum += last_lap_duration
+            self.duration_sum_last += last_lap_duration
+            duration_min = self.duration_min
+            duration_max = self.duration_max
 
-        if duration_min is None or last_lap_duration < duration_min:
-            self.duration_min = duration_min = last_lap_duration
+            if duration_min is None or last_lap_duration < duration_min:
+                self.duration_min = duration_min = last_lap_duration
 
-        if duration_max is None or last_lap_duration > duration_max:
-            self.duration_max = duration_max = last_lap_duration
+            if duration_max is None or last_lap_duration > duration_max:
+                self.duration_max = duration_max = last_lap_duration
 
-        laps_store = self.laps_store
-        if laps_store:
-            laps = self.laps
-            laps.append(lap_timer)
-            while len(laps) > laps_store > 0:
-                poped = laps.pop(0)
-                self.duration_sum_last -= poped.duration
+            laps_store = self.laps_store
+            if laps_store:
+                laps = self.laps
+                laps.append(lap_timer)
+                while len(laps) > laps_store > 0:
+                    poped = laps.pop(0)
+                    self.duration_sum_last -= poped.duration
 
-        if self.log_stop:
-            self._log(self.log_stop.format(timer=self))
-        return r
+            if self.log_stop:
+                self._log(self.log_stop.format(timer=self))
+            return r
 
     @property
     def duration_avg(self):
@@ -257,24 +255,21 @@ class Timer(SimpleTimer):
 
         return closure
 
+    @property
+    def stat_string(self):
+        return (
+            u' - {timer.lap_count:4}'
+            u' [{timer.duration_min:{timer.time_fmt}}'
+            u'/{timer.duration_avg:{timer.time_fmt}}'
+            u'/{timer.duration_max:{timer.time_fmt}}]'
+        ).format(timer=self) if self.lap_count else ''
+
+    template = u"{timer.name}: {timer.duration:{timer.time_fmt}}{timer.stat_string}{timer.running_sign}"
+
     def to_string(self, encoding=None):
-        s = u"{name}: {self.duration:{self.time_fmt}}{stat}{runing_sign}".format(
-            name=self.name or self.__class__.__name__,
-            self=self,
-            runing_sign=self.RUN_SIGN if self.is_active else self.STOP_SIGN,
-            stat=(
-                (
-                    u' - {self.lap_count:4}'
-                    u' [{self.duration_min:{self.time_fmt}}'
-                    u'/{self.duration_avg:{self.time_fmt}}'
-                    u'/{self.duration_max:{self.time_fmt}}]'
-                ).format(self=self)
-                if self.lap_count else ''
-            ),
-        )
+        s = self.template.format(timer=self)
         if encoding:
             return s.encode(encoding)
-
         return s
 
 
