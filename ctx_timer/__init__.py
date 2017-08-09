@@ -28,12 +28,13 @@ class SimpleTimer(object):
     STOP_SIGN = '!'
     RUN_SIGN = '...'
 
-    def __init__(self, name=None, owner=None, time_fmt=DEFAULT_TIME_FMT):
+    def __init__(self, name=None, owner=None, time_fmt=DEFAULT_TIME_FMT, extra=None):
         self.name = name
         self.timestamp_start = None
         self.timestamp_stop = None
         self.owner = owner
         self.time_fmt = time_fmt
+        self.extra = extra or {}
 
     @property
     def time_start(self):
@@ -79,20 +80,34 @@ class SimpleTimer(object):
         at_time = self.timestamp_stop or time.time()
         return at_time - self.timestamp_start
 
-    def __repr__(self):
-        return "<{name}:{self.duration:{self.time_fmt}}{runing_sign}>".format(
+    def to_string(self, encoding=None):
+        s = u"<{name}:{self.duration:{self.time_fmt}}{runing_sign}>".format(
             name=self.name or self.__class__.__name__,
             self=self,
             runing_sign=self.RUN_SIGN if self.is_active else self.STOP_SIGN,
         )
+        if encoding:
+            return s.encode(encoding)
+
+        return s
+
+    def __unicode__(self):
+        return self.to_string()
+
+    def __str__(self):
+        return self.to_string(encoding=sys.stdout.encoding or 'utf-8')
+
+    def __repr__(self):
+        return str(self)
 
 
 # todo: Progress tracking feature (estimate, stage, progress bar, stage comment)
 class Timer(SimpleTimer):
-    STOP_SIGN = '||'
-    RUN_SIGN = '...'
+    STOP_SIGN = '.'
+    RUN_SIGN = ''
     def __init__(
             self,
+            name=None,
             logger=None,
             log_start='Timer {timer.name!r} started at {timer.time_start}',
             log_stop='Timer {timer.name!r} stopped at {timer.time_stop}. Duration is {timer.duration}s',
@@ -101,7 +116,7 @@ class Timer(SimpleTimer):
             laps_store=0,
             **kw
         ):
-        super(Timer, self).__init__()
+        super(Timer, self).__init__(name=name, **kw)
         self.laps_store = laps_store
         self.log_level = log_level and logging._checkLevel(log_level) or logging.NOTSET
         _stream = None
@@ -242,21 +257,25 @@ class Timer(SimpleTimer):
 
         return closure
 
-    def __repr__(self):
-        return "<{name}:{self.duration:{self.time_fmt}}{stat}{runing_sign}>".format(
+    def to_string(self, encoding=None):
+        s = u"{name}: {self.duration:{self.time_fmt}}{stat}{runing_sign}".format(
             name=self.name or self.__class__.__name__,
             self=self,
             runing_sign=self.RUN_SIGN if self.is_active else self.STOP_SIGN,
             stat=(
                 (
-                    '/{self.lap_count}'
-                    '[{self.duration_min:{self.time_fmt}}'
-                    '~{self.duration_avg:{self.time_fmt}}'
-                    '~{self.duration_max:{self.time_fmt}}]'
+                    u' - {self.lap_count:4}'
+                    u' [{self.duration_min:{self.time_fmt}}'
+                    u'/{self.duration_avg:{self.time_fmt}}'
+                    u'/{self.duration_max:{self.time_fmt}}]'
                 ).format(self=self)
                 if self.lap_count else ''
             ),
         )
+        if encoding:
+            return s.encode(encoding)
+
+        return s
 
 
 class T(Timer):
@@ -284,7 +303,9 @@ if __name__ == '__main__':
     for i in xrange(30):
         with tm as t:
             sleep(random.randint(1, 3)/10)
-        print('lap', str(tm.lap_count).zfill(3), tm, t)
+
+        with random.choice([tm, Timer()]):
+            print(u'lap {tm.lap_count:03d}::      {tm} '.format(tm=tm, t=t))
         sleep(0.2)
     # # simple usage:
     # with Timer('simple', logger='stderr'):
