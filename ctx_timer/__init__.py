@@ -21,15 +21,19 @@ import collections
 from copy import copy
 
 
+DEFAULT_TIME_FMT = '.3f'
+
+
 class SimpleTimer(object):
     STOP_SIGN = '!'
     RUN_SIGN = '...'
 
-    def __init__(self, name=None, owner=None):
+    def __init__(self, name=None, owner=None, time_fmt=DEFAULT_TIME_FMT):
         self.name = name
         self.timestamp_start = None
         self.timestamp_stop = None
         self.owner = owner
+        self.time_fmt = time_fmt
 
     @property
     def time_start(self):
@@ -76,7 +80,7 @@ class SimpleTimer(object):
         return at_time - self.timestamp_start
 
     def __repr__(self):
-        return "<{name}:{self.duration:.3f}{runing_sign}>".format(
+        return "<{name}:{self.duration:{self.time_fmt}}{runing_sign}>".format(
             name=self.name or self.__class__.__name__,
             self=self,
             runing_sign=self.RUN_SIGN if self.is_active else self.STOP_SIGN,
@@ -239,12 +243,17 @@ class Timer(SimpleTimer):
         return closure
 
     def __repr__(self):
-        return "<{name}:{self.duration:.3f}{stat}{runing_sign}>".format(
+        return "<{name}:{self.duration:{self.time_fmt}}{stat}{runing_sign}>".format(
             name=self.name or self.__class__.__name__,
             self=self,
             runing_sign=self.RUN_SIGN if self.is_active else self.STOP_SIGN,
             stat=(
-                '/{self.lap_count}[{self.duration_min:.3f}~{self.duration_avg:.3f}~{self.duration_max:.3f}]'.format(self=self)
+                (
+                    '/{self.lap_count}'
+                    '[{self.duration_min:{self.time_fmt}}'
+                    '~{self.duration_avg:{self.time_fmt}}'
+                    '~{self.duration_max:{self.time_fmt}}]'
+                ).format(self=self)
                 if self.lap_count else ''
             ),
         )
