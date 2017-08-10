@@ -195,7 +195,8 @@ class Timer(SimpleTimer):
             lap_timer.stop(t, owner_stop=False, extra=extra)
             self.lap_timer = None
             self.lap_count += 1
-            last_lap_duration = self.duration_last_lap = lap_timer.duration
+            self.last_lap = lap_timer
+            last_lap_duration = lap_timer.duration
             self.duration_sum += last_lap_duration
             self.duration_sum_last += last_lap_duration
             duration_min = self.duration_min
@@ -303,7 +304,7 @@ class T(Timer):
             name=None,
             logger=sys.stdout,
             log_start=None,
-            log_stop='Timer: {timer.duration:.4f}s - {timer.name}',
+            log_stop=Timer.template + ' ==> {timer.last_lap.duration:{timer.time_fmt}}',
             log_level=logging.DEBUG,
             log_name=None,
             **kw
