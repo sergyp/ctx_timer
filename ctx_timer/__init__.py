@@ -18,12 +18,11 @@ import time
 from datetime import datetime
 from functools import wraps
 from collections import Callable
-from contextlib import nested
 from copy import copy
 
 
 DEFAULT_TIME_FMT = '.3f'
-nested()
+
 
 class SimpleTimer(object):
     def __init__(self, name=None, owner=None, time_fmt=DEFAULT_TIME_FMT, template=None, extra=None):
@@ -44,21 +43,33 @@ class SimpleTimer(object):
     def time_stop(self):
         return None if self.timestamp_stop is None else datetime.fromtimestamp(self.timestamp_stop)
 
-    def start(self, t=None):
+    def start(self, t=None, extra=None):
+        if self.timestamp_start is not None:
+            log.error("Simple timer can not to be started twice")
+            return self
+
         if t is None:
             t = time.time()
+        if extra:
+            self.extra.update(extra)
         self.timestamp_start = t
-        return t
+        return self
 
-    def stop(self, t=None, owner_stop=True):
+    def stop(self, t=None, owner_stop=True, extra=None):
+        if self.timestamp_start is None or self.timestamp_stop is not None:
+            log.error("SimpleTimer can not to be stopped twice or if it is not started")
+            return self
+
         owner = self.owner
         if owner_stop and owner is not None:
-            return owner.stop(t)
+            owner.stop(t, extra=extra)
         else:
             if t is None:
                 t = time.time()
             self.timestamp_stop = t
-            return t
+            if extra:
+                self.extra.update(extra)
+        return self
 
     @property
     def is_started(self):
@@ -86,8 +97,10 @@ class SimpleTimer(object):
 
     template = u"<{timer.name}:{timer.duration:{timer.time_fmt}}{timer.running_sign}>"
 
-    def to_string(self, encoding=None):
-        s = self.template.format(timer=self)
+    def to_string(self, template=None, encoding=None):
+        if template is None:
+            template = self.template
+        s = template.format(timer=self)
         if encoding:
             return s.encode(encoding)
 
@@ -106,17 +119,17 @@ class SimpleTimer(object):
 # todo: Progress tracking feature (estimate, stage, progress bar, stage comment)
 class Timer(SimpleTimer):
     def __init__(
-            self,
-            name=None,
-            logger=None,
-            log_start='Timer {timer.name!r} started at {timer.time_start}',
-            log_stop='Timer {timer.name!r} stopped at {timer.time_stop}. Duration is {timer.duration}s',
-            log_level=logging.DEBUG,
-            log_name=None,
-            laps_store=0,
-            stat_template=None,
-            **kw
-        ):
+        self,
+        name=None,
+        logger=None,
+        log_start='Timer {timer.name!r} started at {timer.time_start}',
+        log_stop='Timer {timer.name!r} stopped at {timer.time_stop}. Duration is {timer.duration}s',
+        log_level=logging.DEBUG,
+        log_name=None,
+        laps_store=0,
+        stat_template=None,
+        **kw
+    ):
         super(Timer, self).__init__(name=name, **kw)
         if stat_template is not None:
             self.stat_template = stat_template
@@ -156,30 +169,33 @@ class Timer(SimpleTimer):
         if logger:
             logger.log(self.log_level, message, *av, **kw)
 
-    def start(self, t=None, lap_name=None):
+    def start(self, t=None, lap_name=None, extra=None):
         # todo: lock to thread save support
-        assert self.lap_timer is None, "You can't start timer twice successively without stopping"
-        lap_timer = self.lap_timer = SimpleTimer(name=lap_name or '{timer.name}:lap#{timer.lap_count}'.format(timer=self))
-        t = super(Timer, self).start(t)
-        lap_timer.start(t)
+        lap_timer = self.lap_timer = SimpleTimer(
+            name=lap_name or '{timer.name}:lap#{timer.lap_count}'.format(timer=self),
+            owner=self,
+        )
+        lap_timer.start(t=t, extra=extra)
+        if self.timestamp_start is None:
+            super(Timer, self).start(lap_timer.timestamp_start, extra=extra)
 
         if self.log_start:
             self._log(self.log_start.format(timer=self))
-        return t
+        return lap_timer
 
-    def stop(self, t=None, owner_stop=True):
+    def stop(self, t=None, owner_stop=True, extra=None):
         owner = self.owner
         if owner_stop and owner is not None:
-            return owner.stop(t)
+            return owner.stop(t, extra=extra)
         else:
             # todo: lock to thread save support
             lap_timer = self.lap_timer
             assert lap_timer is not None, "Timer is not running, you can't stop them"
             #t = super(Timer, self).stop(t)  # info: Будучи запущеным такой таймер уже не останавливается сам, только круги
-            r = lap_timer.stop(t, owner_stop=False)
+            lap_timer.stop(t, owner_stop=False, extra=extra)
             self.lap_timer = None
             self.lap_count += 1
-            last_lap_duration = lap_timer.duration
+            last_lap_duration = self.duration_last_lap = lap_timer.duration
             self.duration_sum += last_lap_duration
             self.duration_sum_last += last_lap_duration
             duration_min = self.duration_min
@@ -201,7 +217,7 @@ class Timer(SimpleTimer):
 
             if self.log_stop:
                 self._log(self.log_stop.format(timer=self))
-            return r
+            return lap_timer
 
     @property
     def duration_avg(self):
@@ -249,13 +265,12 @@ class Timer(SimpleTimer):
                     line=func.func_code.co_firstlineno,
                     # todo: ADD traceback of call point (optionally)
                 )
-                laps = ()
+                laps = [timer.start(extra=lap_extra) for timer in closure.timers]
                 try:
-                    with nested(*closure.timers) as laps:
-                        return func(*av, **kw)
+                    return func(*av, **kw)
                 finally:
-                    for lap in laps:
-                        lap.extra.update(lap_extra)
+                    for lap in reversed(laps):
+                        lap.stop()
 
             closure.orig = func
             timers = closure.timers = []
@@ -276,12 +291,10 @@ class Timer(SimpleTimer):
         return self.stat_template.format(timer=self) if self.lap_count else ''
 
     template = u"{timer.name}: {timer.duration:{timer.time_fmt}}{timer.stat_string}{timer.running_sign}"
+    template_repr = "<{timer.name}: {timer.duration:{timer.time_fmt}}{timer.stat_string}{timer.running_sign}>"
 
-    def to_string(self, encoding=None):
-        s = self.template.format(timer=self)
-        if encoding:
-            return s.encode(encoding)
-        return s
+    def __repr__(self):
+        return self.to_string(encoding=sys.stdout.encoding or 'utf-8', template=self.template_repr)
 
 
 class T(Timer):
@@ -303,23 +316,33 @@ class T(Timer):
 if __name__ == '__main__':
     import sys
     from time import sleep
+    from pprint import pprint as pp
     import random
 
-    tm = Timer()
-    for i in xrange(10):
-        with tm as t:
-            sleep(random.randint(1, 3)/10)
+    # tm = Timer()
+    # for i in xrange(3):
+    #     with tm as t:
+    #         sleep(random.randint(1, 3)/10)
+    #
+    #     with random.choice([tm, Timer()]):
+    #         print(u'lap {tm.lap_count:03d}::      {tm} '.format(tm=tm, t=t))
+    #     sleep(0.2)
+    #
+    # print(tm)
 
-        with random.choice([tm, Timer()]):
-            print(u'lap {tm.lap_count:03d}::      {tm} '.format(tm=tm, t=t))
-        sleep(0.2)
-
-    @tm
+    # @tm
     @T(name='t1')
-    @T(name='t2')
+    # @T(name='t2')
     def f(x):
+        sleep(0.5)
         print('f(', x)
 
+    for i in xrange(10):
+        f(i)
+
+    print('=== STAT ===')
+    for t in f.timers:
+        print(t)
     # # simple usage:
     # with Timer('simple', logger='stderr'):
     #     pass
