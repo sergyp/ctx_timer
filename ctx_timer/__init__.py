@@ -245,6 +245,16 @@ class Timer(SimpleTimer):
         lap_timer = self.lap_timer
         return self.duration_sum + (lap_timer.duration if lap_timer else 0)
 
+    @property
+    def decorated_point(self):
+        # {'line': 209, 'func': < function
+        # test_perf
+        # at
+        # 0x0319A330 >, 'fn': 'tree_test.py'}
+        if 'func' in self.extra:
+            return '[{timer.extra[fn]}:{timer.extra[line]} {timer.extra[func].func_name}]'.format(timer=self)
+        return ''
+
     # todo: cumulative_duration of multiple start/stop laps
 
     def __enter__(self):
@@ -291,8 +301,8 @@ class Timer(SimpleTimer):
     def stat_string(self):
         return self.stat_template.format(timer=self) if self.lap_count else ''
 
-    template = u"{timer.name}: {timer.duration:{timer.time_fmt}}{timer.stat_string}{timer.running_sign}"
-    template_repr = "<{timer.name}: {timer.duration:{timer.time_fmt}}{timer.stat_string}{timer.running_sign}>"
+    template = u"{timer.name}{timer.decorated_point}: {timer.duration:{timer.time_fmt}}{timer.stat_string}{timer.running_sign}"
+    template_repr = "<{timer.name}{timer.decorated_point}: {timer.duration:{timer.time_fmt}}{timer.stat_string}{timer.running_sign}>"
 
     def __repr__(self):
         return self.to_string(encoding=sys.stdout.encoding or 'utf-8', template=self.template_repr)
